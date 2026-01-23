@@ -34,7 +34,7 @@ DEFAULT_HEADERS = {
 DEFAULT_FILTERS = {
     "year_from": 2024,
     "year_to": None,  # None = hasta la fecha actual
-    "tipo_expediente": "Conflictos de acceso",
+    "tipo_expediente": "Conflictos de acceso - Energía",
     "ambito": "Energía",
 }
 
