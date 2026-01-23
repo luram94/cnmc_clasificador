@@ -41,29 +41,44 @@ class ResolutionClassifier:
     # Categorías y sus patrones (orden de prioridad)
     CATEGORIES = {
         "ARCHIVADO": [
-            r'declarar?\s+concluso',
+            # Declarar concluso/concluido (ambas formas)
+            r'declarar?\s+(?:el\s+)?(?:procedimiento\s+)?conclu(?:so|ido)',
+            r'declare\s+concluso',
             r'aceptar?\s+(?:de\s+plano\s+)?(?:el\s+)?desistimiento',
-            r'archivar?\s+(?:las\s+)?actuaciones',
+            r'archivar?\s+(?:las\s+|el\s+)?(?:actuaciones|procedimiento)',
             r'archivo\s+(?:de\s+las\s+)?actuaciones',
+            r'proceder\s+al\s+archivo',
             r'desaparición\s+(?:sobrevenida\s+)?(?:de\s+(?:su\s+)?)?objeto',
             r'declarar?\s+la\s+desaparición',
-            r'pérdida\s+(?:sobrevenida\s+)?(?:de\s+)?objeto',
+            r'pérdida\s+(?:sobrevenida\s+)?(?:de\s+)?(?:su\s+)?objeto',
             r'falta\s+de\s+objeto',
             r'inadmitir?\s+(?:a\s+trámite)?',
             r'tener\s+por\s+desistid[oa]',
             r'declarar?\s+la\s+falta\s+de\s+competencia',
             r'falta\s+de\s+competencia\s+de\s+esta\s+comisión',
+            # Terminación/finalización del procedimiento
+            r'terminación\s+(?:del\s+)?procedimiento',
+            r'declarar?\s+la\s+(?:terminación|finalización)',
         ],
         "DESESTIMADO": [
-            r'desestim(?:ar?|e)\s+(?:el\s+)?(?:conflicto|recurso|reclamación|solicitud)',
+            # Patrones flexibles que permiten texto intermedio
+            r'desestim(?:ar?|e)(?:\s+\S+){0,5}\s+(?:el\s+)?(?:presente\s+)?(?:conflicto|recurso|reclamación|solicitud|pretensión)',
+            r'desestim(?:ar?|e)\s+(?:íntegramente\s+)?(?:el\s+)?(?:presente\s+)?(?:conflicto|recurso|reclamación)',
             r'desestim(?:ar?|e)\s+(?:los\s+)?conflictos',
-            r'desestim(?:ar?|e)\s+(?:las\s+)?(?:reclamaciones|solicitudes)',
+            r'desestim(?:ar?|e)\s+(?:las\s+)?(?:reclamaciones|solicitudes|pretensiones)',
             r'no\s+(?:ha\s+)?lugar\s+(?:a\s+)?(?:la\s+)?(?:estimación|reclamación)',
             r'desestimación\s+(?:de\s+)?(?:los?\s+)?(?:conflictos?|recursos?)',
             r'desestimar?,?\s+sin\s+perjuicio',
+            # Confirmar denegación = desestimar al reclamante
+            r'declarar\s+conforme\s+a\s+derecho\s+(?:la\s+)?denegación',
+            r'confirmar?\s+la\s+denegación',
         ],
         "ESTIMADO": [
-            r'estim(?:ar?|e)\s+(?:parcialmente\s+)?(?:el\s+)?(?:conflicto|recurso|reclamación|solicitud)',
+            # Patrones flexibles que permiten texto intermedio (comas, fundamentos jurídicos, etc.)
+            r'estim(?:ar?|e)(?:,?\s*[^.]{0,100}?,?)?\s*(?:el\s+)?(?:conflicto|recurso|reclamación|solicitud)',
+            r'estim(?:ar?|e)\s+(?:parcialmente\s+)?(?:íntegramente\s+)?(?:el\s+)?(?:presente\s+)?(?:conflicto|recurso|reclamación)',
+            r'estim(?:ar?|e)\s+(?:la\s+)?pretensión',
+            r'estim(?:ar?|e)\s+(?:el\s+)?escrito\s+de\s+disconformidad',
             r'estim(?:ar?|e)\s+(?:parcialmente\s+)?(?:los\s+)?conflictos',
             r'estim(?:ar?|e)\s+(?:las\s+)?(?:reclamaciones|solicitudes)',
             r'estimación\s+(?:parcial\s+)?(?:de\s+)?(?:los?\s+)?(?:conflictos?|recursos?)',
@@ -71,6 +86,12 @@ class ResolutionClassifier:
             r'ordenar?\s+a\s+.{5,50}\s+(?:que|el\s+cumplimiento)',
             r'dejar?\s+sin\s+efecto',
             r'requerir?\s+a\s+.{5,50}\s+(?:que|para\s+que)',
+            # Reconocer derecho = favorable al reclamante
+            r'reconocer\s+(?:el\s+)?derecho',
+            r'reconocer\s+a\s+(?:la\s+)?(?:empresa|sociedad|particular|fundación|distribuidora)',
+            r'reconocer\s+a\s+[A-Z]',
+            # Anular = favorable al reclamante
+            r'anular\s+(?:la\s+)?(?:comunicación|resolución|acto)',
             # Verificación de cumplimiento (resolución favorable)
             r'declarar?\s+que\s+(?:las\s+)?condiciones.{5,500}dan\s+(?:adecuado\s+)?cumplimiento',
         ],
@@ -87,6 +108,18 @@ class ResolutionClassifier:
             cat: [re.compile(p, re.IGNORECASE | re.DOTALL) for p in patterns]
             for cat, patterns in self.CATEGORIES.items()
         }
+
+    def _normalize_text(self, text: str) -> str:
+        """Normaliza el texto para mejorar la detección de patrones."""
+        # Reemplazar guiones especiales (em-dash, en-dash) por guión normal
+        text = text.replace('–', '-').replace('—', '-').replace('−', '-')
+        # Normalizar comillas
+        text = text.replace('"', '"').replace('"', '"').replace(''', "'").replace(''', "'")
+        # Normalizar espacios múltiples
+        text = re.sub(r'\s+', ' ', text)
+        # Normalizar puntos suspensivos
+        text = text.replace('…', '...')
+        return text
 
     def _extract_resolution_section(self, text: str) -> Optional[tuple[str, str]]:
         """
@@ -154,6 +187,9 @@ class ResolutionClassifier:
         Returns:
             ClassificationResult con la categoría y detalles
         """
+        # Normalizar texto antes de procesar
+        text = self._normalize_text(text)
+
         section_result = self._extract_resolution_section(text)
 
         if not section_result:
