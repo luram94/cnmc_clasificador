@@ -1,0 +1,28 @@
+  ---                                                                                                                                                                                                  
+  Estructura final                                                                                                                                                                                     
+                                                                                                                                                                                                       
+  scripts/                                                                                                                                                                                             
+  ├── run_all.py          # Pipeline completo                                                                                                                                                          
+  ├── run_extraction.py   # Solo extracción web                                                                                                                                                        
+  ├── run_analysis.py     # Solo clasificación PDFs                                                                                                                                                    
+  ├── run_reporting.py    # Solo generar informes                                                                                                                                                      
+  └── enrich_pdfs.py      # Enriquecer datos de PDFs                                                                                                                                                   
+                                                                                                                                                                                                       
+  src/analysis/                                                                                                                                                                                        
+  └── classifier.py       # Único clasificador (mejorado)                                                                                                                                              
+                                                                                                                                                                                                       
+  ---                                                                                                                                                                                                  
+  Uso simplificado                                                                                                                                                                                     
+                                                                                                                                                                                                       
+  conda activate cnmc_analyzer                                                                                                                                                                         
+                                                                                                                                                                                                       
+  # Pipeline completo                                                                                                                                                                                  
+  python scripts/run_all.py                                                                                                                                                                            
+                                                                                                                                                                                                       
+  # Solo análisis (clasificar PDFs existentes)                                                                                                                                                         
+  python scripts/run_analysis.py --input expedientes_raw.json                                                                                                                                          
+                                                                                                                                                                                                       
+  # Omitir extracción (usar datos existentes)                                                                                                                                                          
+  python scripts/run_all.py --skip-extraction                                                                                                                                                          
+                                                                                                                                                                                                       
+  El clasificador unificado ahora detecta correctamente los 5 casos que antes fallaban (verificación de cumplimiento, falta de competencia, formato inline).  

@@ -1,0 +1,16 @@
+# HTTP y scraping
+requests>=2.31.0
+beautifulsoup4>=4.12.0
+lxml>=5.0.0
+requests-cache>=1.1.0
+
+# PDFs
+pypdf>=4.0.0
+pdfplumber>=0.10.0
+
+# Datos y análisis
+pandas>=2.0.0
+
+# Reporting
+openpyxl>=3.1.0
+matplotlib>=3.8.0
