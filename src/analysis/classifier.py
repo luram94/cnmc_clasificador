@@ -45,12 +45,13 @@ class ResolutionClassifier:
             r'declarar?\s+(?:el\s+)?(?:procedimiento\s+)?conclu(?:so|ido)',
             r'declare\s+concluso',
             r'aceptar?\s+(?:de\s+plano\s+)?(?:el\s+)?desistimiento',
+            r'aceptar,?\s+conforme\s+al\s+artículo\s+94',  # Desistimiento según Ley 39/2015
             r'archivar?\s+(?:las\s+|el\s+)?(?:actuaciones|procedimiento)',
             r'archivo\s+(?:de\s+las\s+)?actuaciones',
             r'proceder\s+al\s+archivo',
             r'desaparición\s+(?:sobrevenida\s+)?(?:de\s+(?:su\s+)?)?objeto',
             r'declarar?\s+la\s+desaparición',
-            r'pérdida\s+(?:sobrevenida\s+)?(?:de\s+)?(?:su\s+)?objeto',
+            r'pérdida\s+(?:sobrevenida\s+)?(?:de[l]?\s+)?(?:su\s+)?objeto',
             r'falta\s+de\s+objeto',
             r'inadmitir?\s+(?:a\s+trámite)?',
             r'tener\s+por\s+desistid[oa]',
@@ -58,7 +59,26 @@ class ResolutionClassifier:
             r'falta\s+de\s+competencia\s+de\s+esta\s+comisión',
             # Terminación/finalización del procedimiento
             r'terminación\s+(?:del\s+)?procedimiento',
-            r'declarar?\s+la\s+(?:terminación|finalización)',
+            r'declarar?\s+(?:la\s+)?(?:terminación|finalización)',
+            r'declarar?\s+finalizado\s+(?:el\s+)?procedimiento',
+            # Verificación de seguimiento sin incidencias
+            r'considerar\s+que.{0,100}no\s+se\s+ha\s+(?:producido|detectado)',
+            r'considerar\s+que.{0,50}a\s+la\s+vista.{0,50}no',
+            r'no\s+procede\s+(?:la\s+)?(?:suspensión|actuación)',
+            # Declarar infrautilización (cierra el procedimiento)
+            r'declarar?\s+(?:la\s+)?infrautilización',
+        ],
+        "RESUELTO": [
+            # Casos que resuelven sin estimar ni desestimar
+            r'resolver\s+(?:las\s+)?discrepancias',
+            r'resolver\s+(?:el\s+)?conflicto.{0,50}declarando',
+            r'considerar\s+que\s+(?:el\s+)?(?:reparto|reconocimiento)',
+            r'considerar\s+que,?\s+conforme\s+a\s+(?:la\s+)?información',
+            r'dar\s+traslado',
+            r'corregir\s+(?:el\s+)?(?:párrafo|error)',
+            r'aclarar\s+(?:que\s+)?(?:la\s+)?referencia',
+            r'declarar?\s+completa\s+(?:la\s+)?solicitud',
+            r'al\s+objeto\s+de\s+garantizar',
         ],
         "DESESTIMADO": [
             # Patrones flexibles que permiten texto intermedio
@@ -66,12 +86,21 @@ class ResolutionClassifier:
             r'desestim(?:ar?|e)\s+(?:íntegramente\s+)?(?:el\s+)?(?:presente\s+)?(?:conflicto|recurso|reclamación)',
             r'desestim(?:ar?|e)\s+(?:los\s+)?conflictos',
             r'desestim(?:ar?|e)\s+(?:las\s+)?(?:reclamaciones|solicitudes|pretensiones)',
+            # Desestimar con texto intermedio largo (fundamentos jurídicos, etc.)
+            r'(?:ÚNICO|Único|PRIMERO|Primero)[.\s:-]+\s*[Dd]esestim(?:ar?|e)',
             r'no\s+(?:ha\s+)?lugar\s+(?:a\s+)?(?:la\s+)?(?:estimación|reclamación)',
             r'desestimación\s+(?:de\s+)?(?:los?\s+)?(?:conflictos?|recursos?)',
             r'desestimar?,?\s+sin\s+perjuicio',
-            # Confirmar denegación = desestimar al reclamante
-            r'declarar\s+conforme\s+a\s+derecho\s+(?:la\s+)?denegación',
-            r'confirmar?\s+la\s+denegación',
+            # Confirmar denegación/comunicación = desestimar al reclamante
+            r'declarar\s+conforme\s+a\s+derecho\s+(?:la\s+)?(?:denegación|respuesta|comunicación|actuación)',
+            r'confirmar?\s+la\s+(?:denegación|actuación)',
+            # Denegar directamente
+            r'denegar\s+(?:la\s+)?(?:autorización|petición|solicitud|acceso)',
+            r'denegar\s+a\s+\w+',
+            r'queda\s+justificada\s+(?:la\s+)?denegación',
+            # Sentencias judiciales que confirman (desestiman recurso)
+            r'(?:fallo|fallamos).{0,100}desestim(?:ar?|amos?)',
+            r'(?:fallo|fallamos).{0,100}confirmar?\s+(?:la\s+)?resolución',
         ],
         "ESTIMADO": [
             # Patrones flexibles que permiten texto intermedio (comas, fundamentos jurídicos, etc.)
@@ -81,6 +110,7 @@ class ResolutionClassifier:
             r'estim(?:ar?|e)\s+(?:el\s+)?escrito\s+de\s+disconformidad',
             r'estim(?:ar?|e)\s+(?:parcialmente\s+)?(?:los\s+)?conflictos',
             r'estim(?:ar?|e)\s+(?:las\s+)?(?:reclamaciones|solicitudes)',
+            r'estim(?:ar?|e),?\s+exclusivamente',
             r'estimación\s+(?:parcial\s+)?(?:de\s+)?(?:los?\s+)?(?:conflictos?|recursos?)',
             r'declarar?\s+(?:la\s+)?(?:nulidad|vulneración)',
             r'ordenar?\s+a\s+.{5,50}\s+(?:que|el\s+cumplimiento)',
@@ -89,11 +119,23 @@ class ResolutionClassifier:
             # Reconocer derecho = favorable al reclamante
             r'reconocer\s+(?:el\s+)?derecho',
             r'reconocer\s+a\s+(?:la\s+)?(?:empresa|sociedad|particular|fundación|distribuidora)',
-            r'reconocer\s+a\s+[A-Z]',
+            r'reconocer\s+a\s+[A-Z\"\'\"\[\(]',  # Incluir comillas tipográficas y corchetes
+            r'(?:se\s+)?reconoce\s+el\s+derecho',
             # Anular = favorable al reclamante
-            r'anular\s+(?:la\s+)?(?:comunicación|resolución|acto)',
+            r'anular\s+(?:el\s+)?(?:la\s+)?(?:comunicación|resolución|acto|denegación|contenido)',
+            r'declarar?\s+no\s+(?:conforme|ajustad[oa]s?)\s+a\s+(?:d|D)erecho',
+            # Sin efecto = anulación
+            r'(?:se\s+)?considera\s+sin\s+efecto',
+            # Hacer efectivo/conceder derecho
+            r'hacer\s+efectivo\s+el\s+derecho',
+            r'declarar?\s+el\s+derecho\s+de',
+            # Dar conformidad a operación solicitada
+            r'dar\s+conformidad\s+(?:previa\s+)?(?:a\s+)?(?:la\s+)?(?:decisión|operación|solicitud)',
             # Verificación de cumplimiento (resolución favorable)
             r'declarar?\s+que\s+(?:las\s+)?condiciones.{5,500}dan\s+(?:adecuado\s+)?cumplimiento',
+            # Sentencias judiciales que anulan (estiman recurso)
+            r'(?:fallo|fallamos).{0,100}estim(?:ar?|amos?)',
+            r'(?:fallo|fallamos).{0,100}anular?\s+(?:la\s+)?resolución',
         ],
     }
 
@@ -112,13 +154,19 @@ class ResolutionClassifier:
     def _normalize_text(self, text: str) -> str:
         """Normaliza el texto para mejorar la detección de patrones."""
         # Reemplazar guiones especiales (em-dash, en-dash) por guión normal
+        text = text.replace('\u2013', '-').replace('\u2014', '-').replace('\u2212', '-')
         text = text.replace('–', '-').replace('—', '-').replace('−', '-')
-        # Normalizar comillas
-        text = text.replace('"', '"').replace('"', '"').replace(''', "'").replace(''', "'")
+        # Normalizar comillas tipográficas Unicode a comillas ASCII
+        text = text.replace('\u201c', '"').replace('\u201d', '"')  # " y "
+        text = text.replace('\u2018', "'").replace('\u2019', "'")  # ' y '
+        text = text.replace('\u00ab', '"').replace('\u00bb', '"')  # « y »
+        # Eliminar números de página sueltos al inicio (ej: "21\nÚNICO")
+        text = re.sub(r'^\d+\s*\n', '', text)
+        text = re.sub(r'^\d+\s+(?=ÚNICO|PRIMERO|Único|Primero)', '', text)
         # Normalizar espacios múltiples
         text = re.sub(r'\s+', ' ', text)
         # Normalizar puntos suspensivos
-        text = text.replace('…', '...')
+        text = text.replace('\u2026', '...')
         return text
 
     def _extract_resolution_section(self, text: str) -> Optional[tuple[str, str]]:
@@ -232,11 +280,48 @@ class ResolutionClassifier:
 
     def _classify_fallback(self, text: str) -> ClassificationResult:
         """Clasificación de respaldo cuando no se encuentra la sección."""
-        last_part = text[-2000:]
+        # Detectar si es una sentencia judicial
+        is_sentencia = bool(re.search(r'(?:FALLO|FALLAMOS|Audiencia\s+Nacional|Tribunal\s+Supremo|SENTENCIA)', text, re.IGNORECASE))
 
+        # Para sentencias, buscar en la sección FALLO
+        if is_sentencia:
+            fallo_match = re.search(r'(?:FALLO|FALLAMOS)[:\s]*(.{50,1500}?)(?:Notifíquese|Así\s+(?:por\s+esta|lo\s+pronunciamos)|firmamos|\Z)', text, re.IGNORECASE | re.DOTALL)
+            if fallo_match:
+                fallo_text = fallo_match.group(1)
+                for categoria, patterns in self._category_patterns.items():
+                    for pattern in patterns:
+                        match = pattern.search(fallo_text)
+                        if match:
+                            return ClassificationResult(
+                                categoria=categoria,
+                                confianza="media",
+                                texto_clave=f"[SENTENCIA] {match.group(0)}",
+                                seccion_encontrada=False
+                            )
+
+        # Buscar en los últimos 3000 caracteres (aumentado)
+        last_part = text[-3000:]
         for categoria, patterns in self._category_patterns.items():
             for pattern in patterns:
                 match = pattern.search(last_part)
+                if match:
+                    return ClassificationResult(
+                        categoria=categoria,
+                        confianza="baja",
+                        texto_clave=match.group(0),
+                        seccion_encontrada=False
+                    )
+
+        # Buscar en todo el texto con patrones de alta confianza
+        high_confidence_patterns = {
+            "ESTIMADO": [r'(?:se\s+)?estima\s+(?:el\s+)?recurso', r'anulamos\s+(?:la\s+)?resolución'],
+            "DESESTIMADO": [r'(?:se\s+)?desestima\s+(?:el\s+)?recurso', r'confirmamos\s+(?:la\s+)?resolución'],
+            "ARCHIVADO": [r'archivo\s+del\s+procedimiento', r'procedimiento\s+(?:ha\s+)?concluido'],
+        }
+
+        for categoria, patterns in high_confidence_patterns.items():
+            for p in patterns:
+                match = re.search(p, text, re.IGNORECASE)
                 if match:
                     return ClassificationResult(
                         categoria=categoria,
