@@ -69,7 +69,9 @@ def run_reporting(
     if generate_csv_file:
         logger.info("Generando CSV...")
         csv_path = generate_csv(expedientes)
+        logger.info(f"  CSV generado: {csv_path}")
         summary_path = generate_summary_csv(expedientes)
+        logger.info(f"  Resumen CSV generado: {summary_path}")
         generated_files["csv"] = str(csv_path)
         generated_files["csv_summary"] = str(summary_path)
 
@@ -77,12 +79,15 @@ def run_reporting(
     if generate_excel:
         logger.info("Generando Excel...")
         excel_path = generate_excel_report(expedientes)
+        logger.info(f"  Excel generado: {excel_path}")
         generated_files["excel"] = str(excel_path)
 
     # Generar gráficos
     if generate_charts:
-        logger.info("Generando gráficos...")
+        logger.info("Generando graficos...")
         chart_paths = generate_all_charts(expedientes)
+        for chart_path in chart_paths:
+            logger.info(f"  Grafico generado: {chart_path}")
         generated_files["charts"] = [str(p) for p in chart_paths]
 
     # Mostrar resumen
