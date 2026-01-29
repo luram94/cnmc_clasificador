@@ -36,6 +36,8 @@ class ResolutionClassifier:
         r'(?:^|\n)\s*(ACUERDA|RESUELVE)\s*[:\.]?\s*\n+(.{50,}?)(?=Comuníquese|El presente|Madrid,|Notifíquese|\Z)',
         # Patrón inline: ACUERDA/RESUELVE seguido directamente de verbo
         r'\b(ACUERDA|RESUELVE)\s+(declarar|desestimar|estimar|archivar|inadmitir|aceptar|informar|tener)(.{50,800}?)(?=Comuníquese|El presente|Madrid,|Notifíquese|\Z)',
+        # Patrón para documentos antiguos con "acuerda" en minúsculas (después de punto o coma)
+        r'[.,]\s*\n*(acuerda)[,:\s]*\n+(.{50,800}?)(?=Contra\s+(?:la\s+)?presente|El presente|Madrid,|\Z)',
     ]
 
     # Categorías y sus patrones (orden de prioridad)
@@ -78,6 +80,9 @@ class ResolutionClassifier:
             r'considerar\s+que\s+(?:el\s+)?(?:reparto|reconocimiento)',
             # Remisión a otro órgano
             r'remitir\s+(?:el\s+)?(?:expediente|actuaciones)',
+            # Satisfacción extraprocesal (conflicto resuelto fuera del procedimiento)
+            r'declarar?\s+resuelto.{0,30}satisfacción\s+extraprocesal',
+            r'satisfacción\s+extraprocesal',
         ],
         "DESESTIMADO": [
             # Patrones flexibles que permiten texto intermedio
@@ -335,6 +340,7 @@ class ResolutionClassifier:
                 r'informar\s+a\s+.{5,50}\s+que',
                 r'dar\s+traslado',
                 r'se\s+acomoda\s+a\s+(?:la\s+)?(?:citada\s+)?resolución',
+                r'\bINADMITIR\b',
             ],
         }
 
