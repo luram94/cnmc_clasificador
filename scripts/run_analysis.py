@@ -86,7 +86,7 @@ def run_analysis(
 
         results[result.categoria] += 1
         processed += 1
-        logger.info(f"  Resultado: {result.categoria} (confianza: {result.confianza:.0%})")
+        logger.info(f"  Resultado: {result.categoria} (confianza: {result.confianza})")
 
     pdf_handler.close()
 
