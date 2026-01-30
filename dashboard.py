@@ -73,19 +73,28 @@ def normalize_empresa(nombre: str) -> str:
         "IBERDROLA DISTRIBUCIÓN ELÉCTRICA S.A.U.": "IBERDROLA DISTRIBUCIÓN",
         "IBERDROLA DISTRIBUCION ELECTRICA S.A.U.": "IBERDROLA DISTRIBUCIÓN",
         "IBERDROLA DISTRIBUCIÓN ELÉCTRICA": "IBERDROLA DISTRIBUCIÓN",
+        "IBERDROLA S": "IBERDROLA",
         # ENAGÁS
         "ENAGÁS TRANSPORTE S.A.": "ENAGÁS",
         "ENAGÁS TRANSPORTES S.A.": "ENAGÁS",
         "ENAGÁS TRANSPORTE": "ENAGÁS",
         "ENAGÁS GTS": "ENAGÁS",
         "ENAGÁS TRANSPORTE Y ENAGÁS GTS": "ENAGÁS",
+        "ENAGAS S": "ENAGÁS",
+        "ENAGAS": "ENAGÁS",
         # ENDESA
         "ENDESA DISTRIBUCIÓN": "ENDESA",
         "ENDESA DISTRIBUCIÓN ELÉCTRICA": "ENDESA",
-        # NATURGY
+        "ENDESA DISTRIBUCIÓN ELÉCTRICA S": "ENDESA",
+        # NATURGY / UNIÓN FENOSA
         "NATURGY IBERIA": "NATURGY",
         "GAS NATURAL FENOSA": "NATURGY",
         "UNIÓN FENOSA DISTRIBUCIÓN": "NATURGY",
+        "UNIÓN FENOSA DISTRIBUCIÓN S": "NATURGY",
+        # VIESGO
+        "VIESGO DISTRIBUCIÓN ELÉCTRICA": "VIESGO",
+        # I-DE variaciones
+        "IDE": "I-DE",
     }
 
     nombre_upper = nombre.upper()
@@ -102,30 +111,98 @@ def normalize_empresa(nombre: str) -> str:
 
 def extract_empresas(titulo: str) -> tuple[str, str]:
     """Extrae reclamante y demandado del título."""
+    import re
+
     if not titulo or not isinstance(titulo, str):
         return ("", "")
 
-    # Intentar varios separadores
-    separadores = [" / ", "/ ", " /", "/"]
+    # Caso 1: Títulos descriptivos largos - buscar patrones "INSTADO POR X FRENTE A Y"
+    match = re.search(
+        r'(?:INSTADO|INTERPUESTO|PRESENTADO)\s+POR\s+(.+?)\s+(?:FRENTE\s+A|CONTRA)\s+(.+?)(?:\s*[-,\.]|$)',
+        titulo, re.IGNORECASE
+    )
+    if match:
+        reclamante = match.group(1).strip()
+        demandado = match.group(2).strip()
+        # Limpiar sufijos
+        demandado = re.split(r'\s+(?:EN|PARA|POR|SOBRE|RELAT)', demandado, flags=re.IGNORECASE)[0]
+        return (normalize_empresa(reclamante), normalize_empresa(demandado))
 
-    for sep in separadores:
-        if sep in titulo:
-            partes = titulo.split(sep, 1)
-            reclamante = partes[0].strip()
-            resto = partes[1] if len(partes) > 1 else ""
+    # Caso 2: Patrón "X VS Y" o "X FRENTE A Y"
+    for sep_pattern in [r'\s+VS\.?\s+', r'\s+FRENTE\s+A\s+', r'\s+CONTRA\s+']:
+        match = re.search(sep_pattern, titulo, re.IGNORECASE)
+        if match:
+            partes = re.split(sep_pattern, titulo, maxsplit=1, flags=re.IGNORECASE)
+            if len(partes) == 2:
+                reclamante = partes[0].strip()
+                demandado = partes[1].strip()
+                # Limpiar prefijos comunes del reclamante
+                reclamante = re.sub(r'^(?:CATR|CONFLICTO DE ACCESO)\s+', '', reclamante, flags=re.IGNORECASE)
+                # Limpiar sufijos del demandado
+                demandado = re.split(r'\s+[-\(]', demandado)[0].strip()
+                return (normalize_empresa(reclamante), normalize_empresa(demandado))
 
-            # El demandado puede tener " -" al final con más info
-            if " -" in resto:
-                demandado = resto.split(" -")[0].strip()
-            elif " (" in resto:
-                demandado = resto.split(" (")[0].strip()
-            else:
-                demandado = resto.strip()
-
+    # Caso 3: Patrón "CATR X  - Y" (doble espacio + guión)
+    if re.match(r'^CATR\s+', titulo, re.IGNORECASE):
+        match = re.search(r'^CATR\s+(.+?)\s{2,}-\s*(.+?)(?:\s*[-\(]|$)', titulo, re.IGNORECASE)
+        if match:
+            reclamante = match.group(1).strip()
+            demandado = match.group(2).strip()
             return (normalize_empresa(reclamante), normalize_empresa(demandado))
+        # Si no hay demandado explícito, buscar empresas conocidas
+        empresas_conocidas = ['REE', 'UFD', 'I-DE', 'E-DISTRIBUCIÓN', 'IBERDROLA', 'ENDESA', 'ENAGÁS']
+        for emp in empresas_conocidas:
+            if emp in titulo.upper():
+                # El demandado es la empresa conocida, el reclamante es el resto
+                reclamante = re.sub(r'^CATR\s+', '', titulo, flags=re.IGNORECASE)
+                reclamante = re.sub(rf'\s*-?\s*{emp}.*$', '', reclamante, flags=re.IGNORECASE).strip()
+                return (normalize_empresa(reclamante), emp)
 
-    # Si no hay separador, todo es reclamante
-    return (normalize_empresa(titulo), "")
+    # Caso 4: Separador "/" pero verificar que no sea parte de un número
+    if '/' in titulo:
+        # Si el "/" va seguido de un número (ej: "11/2005"), no es separador de empresas
+        if not re.search(r'/\s*\d', titulo):
+            separadores = [" / ", "/ ", " /", "/"]
+            for sep in separadores:
+                if sep in titulo:
+                    partes = titulo.split(sep, 1)
+                    reclamante = partes[0].strip()
+                    resto = partes[1] if len(partes) > 1 else ""
+
+                    # El demandado puede tener " -" al final con más info
+                    if " -" in resto:
+                        demandado = resto.split(" -")[0].strip()
+                    elif " (" in resto:
+                        demandado = resto.split(" (")[0].strip()
+                    else:
+                        demandado = resto.strip()
+
+                    return (normalize_empresa(reclamante), normalize_empresa(demandado))
+
+    # Caso 5: Buscar empresas conocidas en títulos sin separador claro
+    empresas_conocidas_patrones = [
+        (r'\bREE\b', 'REE'),
+        (r'\bUFD\b', 'UFD'),
+        (r'I-DE', 'I-DE'),
+        (r'E-DISTRIBUCIÓN', 'E-DISTRIBUCIÓN'),
+        (r'IBERDROLA', 'IBERDROLA'),
+        (r'ENDESA', 'ENDESA'),
+        (r'ENAGÁS', 'ENAGÁS'),
+        (r'VIESGO', 'VIESGO'),
+    ]
+
+    for patron, nombre in empresas_conocidas_patrones:
+        if re.search(patron, titulo, re.IGNORECASE):
+            # Si encontramos una empresa conocida, asumimos que es el demandado
+            # y el resto es el reclamante (limpiando prefijos)
+            reclamante = re.sub(rf'\s*[-/]?\s*{patron}.*$', '', titulo, flags=re.IGNORECASE)
+            reclamante = re.sub(r'^(?:CATR|CONFLICTO[^/]*)\s+', '', reclamante, flags=re.IGNORECASE)
+            if reclamante.strip():
+                return (normalize_empresa(reclamante.strip()), nombre)
+
+    # Si no hay separador ni empresa conocida, solo devolver el título como reclamante
+    reclamante = re.sub(r'^(?:CATR|CONFLICTO[^/]*)\s+', '', titulo, flags=re.IGNORECASE)
+    return (normalize_empresa(reclamante), "")
 
 
 @st.cache_data
