@@ -27,10 +27,11 @@ env/
 .venv/
 
 # Data files (generated/downloaded)
-data/processed/
 data/output/
 data/raw/*.json
 data/raw/*.csv
+# Keep processed data for dashboard
+!data/processed/expedientes_analyzed.json
 
 # Logs
 *.log
