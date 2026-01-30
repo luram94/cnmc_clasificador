@@ -72,11 +72,18 @@ def run_extraction(
 
         # Obtener detalles y URLs de PDFs
         if extract_pdfs:
-            logger.info("Extrayendo URLs de resoluciones PDF...")
-            for exp in expedientes:
+            total = len(expedientes)
+            logger.info(f"Extrayendo URLs de resoluciones PDF de {total} expedientes...")
+            pdfs_found = 0
+            for i, exp in enumerate(expedientes, 1):
                 details = scraper.get_expediente_detail(exp.url)
                 if details:
                     exp.url_resolucion = details.get("url_resolucion")
+                    if exp.url_resolucion:
+                        pdfs_found += 1
+                if i % 10 == 0 or i == total:
+                    logger.info(f"  URLs extraidas: {i}/{total} ({pdfs_found} PDFs encontrados)")
+            logger.info(f"Extraccion de URLs completada: {pdfs_found}/{total} expedientes con PDF")
 
     logger.info(f"Total expedientes extraídos: {len(expedientes)}")
 

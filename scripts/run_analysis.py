@@ -59,13 +59,20 @@ def run_analysis(
     results = Counter()
     processed = 0
 
+    # Contar expedientes con URL de resolucion
+    expedientes_con_pdf = [e for e in expedientes if e.get("url_resolucion")]
+    total_con_pdf = len(expedientes_con_pdf)
+    logger.info(f"Expedientes con PDF a analizar: {total_con_pdf}")
+
     for i, exp in enumerate(expedientes, 1):
         if not exp.get("url_resolucion"):
             continue
 
         # Descargar PDF y extraer texto
+        logger.info(f"[{processed + 1}/{total_con_pdf}] Procesando: {exp.get('id', 'N/A')}...")
         text = pdf_handler.extract_text_from_url(exp["url_resolucion"])
         if not text:
+            logger.warning(f"  No se pudo extraer texto del PDF")
             results["ERROR"] += 1
             continue
 
@@ -79,9 +86,7 @@ def run_analysis(
 
         results[result.categoria] += 1
         processed += 1
-
-        if i % 50 == 0:
-            logger.info(f"Progreso: {i}/{len(expedientes)}")
+        logger.info(f"  Resultado: {result.categoria} (confianza: {result.confianza})")
 
     pdf_handler.close()
 
