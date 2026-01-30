@@ -27,6 +27,107 @@ COLORS = {
 }
 
 
+def normalize_empresa(nombre: str) -> str:
+    """Normaliza el nombre de una empresa para evitar duplicados."""
+    import re
+
+    if not nombre or not isinstance(nombre, str):
+        return ""
+
+    # Quitar espacios extra
+    nombre = " ".join(nombre.split())
+
+    # Ignorar patrones que no son empresas (ej: "2007- .")
+    if re.match(r'^\d{4}-?\s*\.?$', nombre):
+        return ""
+
+    # Normalizar variaciones conocidas
+    normalizaciones = {
+        # REE
+        "RED ELECTRICA DE ESPANA": "REE",
+        "RED ELECTRICA DE ESPAÑA": "REE",
+        "RED ELÉCTRICA DE ESPAÑA": "REE",
+        "REE.": "REE",
+        # E-DISTRIBUCIÓN
+        "EDISTRIBUCIÓN REDES DIGITALES S.L.U.": "E-DISTRIBUCIÓN",
+        "EDISTRIBUCION REDES DIGITALES S.L.U.": "E-DISTRIBUCIÓN",
+        "E-DISTRIBUCIÓN REDES DIGITALES S.L.U.": "E-DISTRIBUCIÓN",
+        "E-DISTRIBUCION REDES DIGITALES S.L.U.": "E-DISTRIBUCIÓN",
+        "EDISTRIBUCIÓN REDES DIGITALES": "E-DISTRIBUCIÓN",
+        "E-DISTRIBUCIÓN REDES DIGITALES": "E-DISTRIBUCIÓN",
+        "E-DISTRIBUCION REDES DIGITALES": "E-DISTRIBUCIÓN",
+        "EDISTRIBUCIÓN": "E-DISTRIBUCIÓN",
+        "EDISTRIBUCION": "E-DISTRIBUCIÓN",
+        # I-DE
+        "I-DE REDES ELÉCTRICAS INTELIGENTES S.A.U.": "I-DE",
+        "I-DE REDES ELECTRICAS INTELIGENTES S.A.U.": "I-DE",
+        "I-DE REDES ELÉCTRICAS INTELIGENTES S.A.": "I-DE",
+        "I-DE REDES ELECTRICAS INTELIGENTES S.A.": "I-DE",
+        "I-DE REDES ELECTRICAS INTELIGENTES": "I-DE",
+        "I-DE REDES ELÉCTRICAS INTELIGENTES": "I-DE",
+        # UFD
+        "UFD DISTRIBUCIÓN ELECTRICIDAD S.A.": "UFD",
+        "UFD DISTRIBUCION ELECTRICIDAD S.A.": "UFD",
+        "UFD DISTRIBUCIÓN ELECTRICIDAD": "UFD",
+        # IBERDROLA
+        "IBERDROLA DISTRIBUCIÓN ELÉCTRICA S.A.U.": "IBERDROLA DISTRIBUCIÓN",
+        "IBERDROLA DISTRIBUCION ELECTRICA S.A.U.": "IBERDROLA DISTRIBUCIÓN",
+        "IBERDROLA DISTRIBUCIÓN ELÉCTRICA": "IBERDROLA DISTRIBUCIÓN",
+        # ENAGÁS
+        "ENAGÁS TRANSPORTE S.A.": "ENAGÁS",
+        "ENAGÁS TRANSPORTES S.A.": "ENAGÁS",
+        "ENAGÁS TRANSPORTE": "ENAGÁS",
+        "ENAGÁS GTS": "ENAGÁS",
+        "ENAGÁS TRANSPORTE Y ENAGÁS GTS": "ENAGÁS",
+        # ENDESA
+        "ENDESA DISTRIBUCIÓN": "ENDESA",
+        "ENDESA DISTRIBUCIÓN ELÉCTRICA": "ENDESA",
+        # NATURGY
+        "NATURGY IBERIA": "NATURGY",
+        "GAS NATURAL FENOSA": "NATURGY",
+        "UNIÓN FENOSA DISTRIBUCIÓN": "NATURGY",
+    }
+
+    nombre_upper = nombre.upper()
+    for variacion, normalizado in normalizaciones.items():
+        if variacion in nombre_upper or nombre_upper in variacion:
+            return normalizado
+
+    # Limpiar sufijos comunes para nombres no normalizados
+    nombre = re.sub(r'\s*S\.?L\.?U?\.?\s*$', '', nombre, flags=re.IGNORECASE)
+    nombre = re.sub(r'\s*S\.?A\.?U?\.?\s*$', '', nombre, flags=re.IGNORECASE)
+
+    return nombre.strip()
+
+
+def extract_empresas(titulo: str) -> tuple[str, str]:
+    """Extrae reclamante y demandado del título."""
+    if not titulo or not isinstance(titulo, str):
+        return ("", "")
+
+    # Intentar varios separadores
+    separadores = [" / ", "/ ", " /", "/"]
+
+    for sep in separadores:
+        if sep in titulo:
+            partes = titulo.split(sep, 1)
+            reclamante = partes[0].strip()
+            resto = partes[1] if len(partes) > 1 else ""
+
+            # El demandado puede tener " -" al final con más info
+            if " -" in resto:
+                demandado = resto.split(" -")[0].strip()
+            elif " (" in resto:
+                demandado = resto.split(" (")[0].strip()
+            else:
+                demandado = resto.strip()
+
+            return (normalize_empresa(reclamante), normalize_empresa(demandado))
+
+    # Si no hay separador, todo es reclamante
+    return (normalize_empresa(titulo), "")
+
+
 @st.cache_data
 def load_data() -> pd.DataFrame:
     """Carga los datos de expedientes analizados."""
@@ -49,11 +150,13 @@ def load_data() -> pd.DataFrame:
     df["mes"] = df["fecha"].dt.month
     df["año_mes"] = df["fecha"].dt.to_period("M").astype(str)
 
-    # Extraer empresas del título (antes y después de " / ")
-    df["reclamante"] = df["titulo"].apply(lambda x: x.split(" / ")[0] if " / " in x else x)
-    df["demandado"] = df["titulo"].apply(
-        lambda x: x.split(" / ")[1].split(" -")[0] if " / " in x else ""
-    )
+    # Extraer empresas del título con normalización
+    empresas = df["titulo"].apply(extract_empresas)
+    df["reclamante"] = empresas.apply(lambda x: x[0])
+    df["demandado"] = empresas.apply(lambda x: x[1])
+
+    # Filtrar filas con demandado vacío para análisis de empresas
+    df["tiene_demandado"] = df["demandado"] != ""
 
     return df
 
@@ -226,43 +329,332 @@ def render_timeline_chart(df: pd.DataFrame):
         st.plotly_chart(fig, use_container_width=True)
 
 
-def render_top_demandados(df: pd.DataFrame):
-    """Renderiza top empresas demandadas."""
-    st.subheader("🏢 Top Empresas Demandadas")
+def render_empresas_section(df: pd.DataFrame):
+    """Renderiza la sección completa de análisis de empresas."""
+    st.subheader("🏢 Análisis de Empresas")
+
+    # Filtrar solo expedientes con demandado válido para análisis
+    df_empresas = df[df["tiene_demandado"]].copy()
+
+    if df_empresas.empty:
+        st.warning("No hay datos de empresas para mostrar.")
+        return
+
+    # Filtro de mínimo de conflictos
+    min_conflictos = st.slider(
+        "Mínimo de conflictos para incluir empresa",
+        min_value=1, max_value=20, value=3,
+        help="Filtra empresas con menos conflictos del umbral seleccionado"
+    )
+
+    # Sub-tabs para organizar
+    tab_demandados, tab_reclamantes, tab_detalle = st.tabs([
+        "📊 Demandados",
+        "📈 Reclamantes",
+        "🔎 Detalle Empresa"
+    ])
+
+    with tab_demandados:
+        render_demandados_tab(df_empresas, min_conflictos)
+
+    with tab_reclamantes:
+        render_reclamantes_tab(df_empresas, min_conflictos)
+
+    with tab_detalle:
+        render_empresa_detalle_tab(df_empresas)
+
+
+def render_demandados_tab(df: pd.DataFrame, min_conflictos: int):
+    """Tab de análisis de empresas demandadas."""
+    import plotly.express as px
+
+    # Calcular estadísticas por demandado
+    stats = df.groupby("demandado").agg({
+        "id": "count",
+        "resultado_clasificado": [
+            lambda x: (x == "ESTIMADO").sum(),
+            lambda x: (x == "DESESTIMADO").sum(),
+            lambda x: (x == "ARCHIVADO").sum(),
+        ]
+    })
+    stats.columns = ["Total", "Estimados", "Desestimados", "Archivados"]
+    stats = stats[stats["Total"] >= min_conflictos].copy()
+
+    # Calcular tasas
+    stats["Tasa Estimacion"] = (stats["Estimados"] / stats["Total"] * 100).round(1)
+    stats["Tasa Desestimacion"] = (stats["Desestimados"] / stats["Total"] * 100).round(1)
+    stats = stats.sort_values("Total", ascending=False)
 
     col1, col2 = st.columns(2)
 
     with col1:
-        # Top general
-        top = df["demandado"].value_counts().head(10)
-        st.write("**Top 10 - Total de conflictos**")
-        st.dataframe(
-            top.reset_index().rename(columns={"index": "Empresa", "demandado": "Conflictos"}),
-            hide_index=True,
-            use_container_width=True,
+        st.write("**Top 10 - Empresas más demandadas**")
+        top10 = stats.head(10)
+
+        # Gráfico de barras stacked
+        plot_data = top10[["Estimados", "Desestimados", "Archivados"]].reset_index()
+        plot_data = plot_data.melt(
+            id_vars="demandado",
+            var_name="Resultado",
+            value_name="Cantidad"
         )
+
+        fig = px.bar(
+            plot_data,
+            y="demandado",
+            x="Cantidad",
+            color="Resultado",
+            orientation="h",
+            color_discrete_map={
+                "Estimados": COLORS["ESTIMADO"],
+                "Desestimados": COLORS["DESESTIMADO"],
+                "Archivados": COLORS["ARCHIVADO"],
+            },
+        )
+        fig.update_layout(
+            yaxis={"categoryorder": "total ascending"},
+            margin=dict(t=20, b=20, l=20, r=20),
+            legend=dict(orientation="h", yanchor="bottom", y=1.02),
+            height=400,
+        )
+        st.plotly_chart(fig, use_container_width=True)
 
     with col2:
-        # Tasa de estimación por empresa
-        empresas_stats = df.groupby("demandado").agg({
-            "id": "count",
-            "resultado_clasificado": lambda x: (x == "ESTIMADO").sum()
-        }).rename(columns={"id": "Total", "resultado_clasificado": "Estimados"})
+        st.write("**Top 10 - Mayor tasa de estimación (favorable al reclamante)**")
+        top_estimacion = stats.sort_values("Tasa Estimacion", ascending=False).head(10)
 
-        empresas_stats["Tasa Estimación"] = (
-            empresas_stats["Estimados"] / empresas_stats["Total"] * 100
-        ).round(1)
-
-        # Filtrar empresas con al menos 5 conflictos
-        empresas_stats = empresas_stats[empresas_stats["Total"] >= 5]
-        empresas_stats = empresas_stats.sort_values("Tasa Estimación", ascending=False).head(10)
-
-        st.write("**Top 10 - Mayor tasa de estimación** (mín. 5 conflictos)")
-        st.dataframe(
-            empresas_stats.reset_index().rename(columns={"demandado": "Empresa"}),
-            hide_index=True,
-            use_container_width=True,
+        fig = px.bar(
+            top_estimacion.reset_index(),
+            y="demandado",
+            x="Tasa Estimacion",
+            orientation="h",
+            color="Tasa Estimacion",
+            color_continuous_scale=["#E74C3C", "#F39C12", "#27AE60"],
+            text="Tasa Estimacion",
         )
+        fig.update_traces(texttemplate="%{text:.1f}%", textposition="outside")
+        fig.update_layout(
+            yaxis={"categoryorder": "total ascending"},
+            margin=dict(t=20, b=20, l=20, r=20),
+            showlegend=False,
+            height=400,
+            coloraxis_showscale=False,
+        )
+        st.plotly_chart(fig, use_container_width=True)
+
+    # Tabla completa
+    st.write("**Tabla completa de empresas demandadas**")
+    tabla = stats.reset_index().rename(columns={
+        "demandado": "Empresa",
+        "Tasa Estimacion": "% Estimación",
+        "Tasa Desestimacion": "% Desestimación",
+    })
+    st.dataframe(
+        tabla,
+        hide_index=True,
+        use_container_width=True,
+        column_config={
+            "% Estimación": st.column_config.ProgressColumn(
+                "% Estimación", min_value=0, max_value=100, format="%.1f%%"
+            ),
+            "% Desestimación": st.column_config.ProgressColumn(
+                "% Desestimación", min_value=0, max_value=100, format="%.1f%%"
+            ),
+        }
+    )
+
+
+def render_reclamantes_tab(df: pd.DataFrame, min_conflictos: int):
+    """Tab de análisis de empresas reclamantes."""
+    import plotly.express as px
+
+    # Calcular estadísticas por reclamante
+    stats = df.groupby("reclamante").agg({
+        "id": "count",
+        "resultado_clasificado": [
+            lambda x: (x == "ESTIMADO").sum(),
+            lambda x: (x == "DESESTIMADO").sum(),
+            lambda x: (x == "ARCHIVADO").sum(),
+        ]
+    })
+    stats.columns = ["Total", "Estimados", "Desestimados", "Archivados"]
+    stats = stats[stats["Total"] >= min_conflictos].copy()
+
+    # Calcular tasa de éxito (estimaciones conseguidas)
+    stats["Tasa Exito"] = (stats["Estimados"] / stats["Total"] * 100).round(1)
+    stats = stats.sort_values("Total", ascending=False)
+
+    col1, col2 = st.columns(2)
+
+    with col1:
+        st.write("**Top 10 - Empresas que más reclaman**")
+        top10 = stats.head(10)
+
+        fig = px.bar(
+            top10.reset_index(),
+            y="reclamante",
+            x="Total",
+            orientation="h",
+            color="Tasa Exito",
+            color_continuous_scale=["#E74C3C", "#F39C12", "#27AE60"],
+            text="Total",
+        )
+        fig.update_traces(textposition="outside")
+        fig.update_layout(
+            yaxis={"categoryorder": "total ascending"},
+            margin=dict(t=20, b=20, l=20, r=20),
+            height=400,
+        )
+        st.plotly_chart(fig, use_container_width=True)
+
+    with col2:
+        st.write("**Top 10 - Mayor tasa de éxito (reclamaciones estimadas)**")
+        top_exito = stats.sort_values("Tasa Exito", ascending=False).head(10)
+
+        fig = px.bar(
+            top_exito.reset_index(),
+            y="reclamante",
+            x="Tasa Exito",
+            orientation="h",
+            color="Tasa Exito",
+            color_continuous_scale=["#E74C3C", "#F39C12", "#27AE60"],
+            text="Tasa Exito",
+        )
+        fig.update_traces(texttemplate="%{text:.1f}%", textposition="outside")
+        fig.update_layout(
+            yaxis={"categoryorder": "total ascending"},
+            margin=dict(t=20, b=20, l=20, r=20),
+            showlegend=False,
+            height=400,
+            coloraxis_showscale=False,
+        )
+        st.plotly_chart(fig, use_container_width=True)
+
+    # Tabla completa
+    st.write("**Tabla completa de empresas reclamantes**")
+    tabla = stats.reset_index().rename(columns={
+        "reclamante": "Empresa",
+        "Tasa Exito": "% Éxito",
+    })
+    st.dataframe(
+        tabla,
+        hide_index=True,
+        use_container_width=True,
+        column_config={
+            "% Éxito": st.column_config.ProgressColumn(
+                "% Éxito", min_value=0, max_value=100, format="%.1f%%"
+            ),
+        }
+    )
+
+
+def render_empresa_detalle_tab(df: pd.DataFrame):
+    """Tab de detalle de una empresa específica."""
+    import plotly.express as px
+
+    # Obtener lista de empresas (demandados y reclamantes)
+    todas_empresas = set(df["demandado"].unique()) | set(df["reclamante"].unique())
+    todas_empresas = sorted([e for e in todas_empresas if e])
+
+    empresa_sel = st.selectbox("Seleccionar empresa", options=todas_empresas)
+
+    if not empresa_sel:
+        return
+
+    # Filtrar expedientes donde la empresa es demandada o reclamante
+    df_demandado = df[df["demandado"] == empresa_sel]
+    df_reclamante = df[df["reclamante"] == empresa_sel]
+
+    col1, col2, col3, col4 = st.columns(4)
+
+    with col1:
+        st.metric("Como demandado", len(df_demandado))
+    with col2:
+        st.metric("Como reclamante", len(df_reclamante))
+    with col3:
+        if len(df_demandado) > 0:
+            tasa_est = (df_demandado["resultado_clasificado"] == "ESTIMADO").sum() / len(df_demandado) * 100
+            st.metric("% Estimación (demandado)", f"{tasa_est:.1f}%")
+        else:
+            st.metric("% Estimación (demandado)", "N/A")
+    with col4:
+        if len(df_reclamante) > 0:
+            tasa_exito = (df_reclamante["resultado_clasificado"] == "ESTIMADO").sum() / len(df_reclamante) * 100
+            st.metric("% Éxito (reclamante)", f"{tasa_exito:.1f}%")
+        else:
+            st.metric("% Éxito (reclamante)", "N/A")
+
+    col1, col2 = st.columns(2)
+
+    with col1:
+        if len(df_demandado) > 0:
+            st.write("**Distribución como demandado**")
+            counts = df_demandado["resultado_clasificado"].value_counts()
+            fig = px.pie(
+                values=counts.values,
+                names=counts.index,
+                color=counts.index,
+                color_discrete_map=COLORS,
+                hole=0.4,
+            )
+            fig.update_layout(margin=dict(t=20, b=20, l=20, r=20), height=300)
+            st.plotly_chart(fig, use_container_width=True)
+
+    with col2:
+        if len(df_reclamante) > 0:
+            st.write("**Distribución como reclamante**")
+            counts = df_reclamante["resultado_clasificado"].value_counts()
+            fig = px.pie(
+                values=counts.values,
+                names=counts.index,
+                color=counts.index,
+                color_discrete_map=COLORS,
+                hole=0.4,
+            )
+            fig.update_layout(margin=dict(t=20, b=20, l=20, r=20), height=300)
+            st.plotly_chart(fig, use_container_width=True)
+
+    # Evolución temporal
+    df_empresa = pd.concat([df_demandado, df_reclamante]).drop_duplicates(subset=["id"])
+    if len(df_empresa) > 0 and df_empresa["fecha"].notna().any():
+        st.write("**Evolución temporal de conflictos**")
+        timeline = df_empresa.groupby(["año", "resultado_clasificado"]).size().unstack(fill_value=0)
+
+        if not timeline.empty:
+            timeline_reset = timeline.reset_index().melt(
+                id_vars="año",
+                var_name="Resultado",
+                value_name="Cantidad"
+            )
+            fig = px.bar(
+                timeline_reset,
+                x="año",
+                y="Cantidad",
+                color="Resultado",
+                color_discrete_map=COLORS,
+                barmode="stack",
+            )
+            fig.update_layout(margin=dict(t=20, b=20, l=20, r=20), height=300)
+            st.plotly_chart(fig, use_container_width=True)
+
+    # Lista de expedientes
+    st.write("**Expedientes relacionados**")
+    df_display = df_empresa[["id", "fecha", "titulo", "resultado_clasificado", "demandado", "reclamante"]].copy()
+    df_display["fecha"] = df_display["fecha"].dt.strftime("%Y-%m-%d")
+    df_display["Rol"] = df_display.apply(
+        lambda x: "Demandado" if x["demandado"] == empresa_sel else "Reclamante", axis=1
+    )
+    st.dataframe(
+        df_display[["id", "fecha", "Rol", "resultado_clasificado", "titulo"]].rename(columns={
+            "id": "ID",
+            "fecha": "Fecha",
+            "resultado_clasificado": "Resultado",
+            "titulo": "Título",
+        }),
+        hide_index=True,
+        use_container_width=True,
+        height=300,
+    )
 
 
 def render_expedientes_table(df: pd.DataFrame):
@@ -437,7 +829,7 @@ def main():
         render_timeline_chart(df_filtered)
 
     with tab3:
-        render_top_demandados(df_filtered)
+        render_empresas_section(df_filtered)
 
     with tab4:
         render_expedientes_table(df_filtered)
